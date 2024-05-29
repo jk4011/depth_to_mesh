@@ -10,12 +10,16 @@ from skimage.io import imread
 from tqdm import tqdm
 
 DEFAULT_CAMERA = o3d.camera.PinholeCameraIntrinsic(
-    width=640, height=480,
-    fx=528.0, fy=528.0,
-    cx=319.5, cy=239.5
+    # width=640, height=480,
+    # fx=528.0, fy=528.0,
+    # cx=319.5, cy=239.5
+    width=512, height=512,
+    fx=857.5560548920328, fy=660.5947096585073,
+    cx=255.5, cy=255.5
 )
 
 logger = logging.getLogger(__name__)
+
 
 def _pixel_coord_np(width, height):
     """
@@ -28,6 +32,7 @@ def _pixel_coord_np(width, height):
     [x, y] = np.meshgrid(x, y)
     return np.vstack((x.flatten(), y.flatten(), np.ones_like(x.flatten())))
 
+
 def depth_file_to_mesh(image, cameraMatrix=DEFAULT_CAMERA, minAngle=3.0, sun3d=False, depthScale=1000.0):
     """
     Converts a depth image file into a open3d TriangleMesh object
@@ -38,12 +43,19 @@ def depth_file_to_mesh(image, cameraMatrix=DEFAULT_CAMERA, minAngle=3.0, sun3d=F
     :param sun3d: Specify if the depth file is in the special SUN3D format
     :returns: an open3d.geometry.TriangleMesh containing the converted mesh
     """
-    depth_raw = imread(image).astype('uint16')
+    if image.endswith('.png'):
+        depth_raw = imread(image).astype('uint16')
+    elif image.endswith('.npy') or image.endswith('.npz'):
+        depth_raw = np.load(image)
+        if depth_raw.max() < 10:
+            depth_raw *= 1000
+        depth_raw = depth_raw.astype('uint16')
+
     width = depth_raw.shape[1]
     height = depth_raw.shape[0]
 
     if sun3d:
-        depth_raw = np.bitwise_or(depth_raw>>3, depth_raw<<13)
+        depth_raw = np.bitwise_or(depth_raw >> 3, depth_raw << 13)
 
     depth_raw = depth_raw.astype('float32')
     depth_raw /= depthScale
@@ -56,10 +68,11 @@ def depth_file_to_mesh(image, cameraMatrix=DEFAULT_CAMERA, minAngle=3.0, sun3d=F
     else:
         camera = o3d.camera.PinholeCameraIntrinsic(
             width=width, height=height,
-            fx=cameraMatrix[0,0], fy=cameraMatrix[1,1],
-            cx=cameraMatrix[0,2], cy=cameraMatrix[1,2]
+            fx=cameraMatrix[0, 0], fy=cameraMatrix[1, 1],
+            cx=cameraMatrix[0, 2], cy=cameraMatrix[1, 2]
         )
     return depth_to_mesh(depth_raw.astype('float32'), camera, minAngle)
+
 
 def depth_to_mesh(depth, camera=DEFAULT_CAMERA, minAngle=3.0):
     """
@@ -70,7 +83,7 @@ def depth_to_mesh(depth, camera=DEFAULT_CAMERA, minAngle=3.0):
     :param minAngle: Minimum angle between viewing rays and triangles in degrees
     :returns: an open3d.geometry.TriangleMesh containing the converted mesh
     """
-    
+
     logger.info('Reprojecting points...')
     K = camera.intrinsic_matrix
     K_inv = np.linalg.inv(K)
@@ -81,15 +94,15 @@ def depth_to_mesh(depth, camera=DEFAULT_CAMERA, minAngle=3.0):
     w = camera.width
     h = camera.height
 
-    with tqdm(total=(h-1)*(w-1)) as pbar:
-        for i in range(0, h-1):
-            for j in range(0, w-1):
+    with tqdm(total=(h - 1) * (w - 1)) as pbar:
+        for i in range(0, h - 1):
+            for j in range(0, w - 1):
                 verts = [
-                    cam_coords[:, w*i+j],
-                    cam_coords[:, w*(i+1)+j],
-                    cam_coords[:, w*i+(j+1)],
+                    cam_coords[:, w * i + j],
+                    cam_coords[:, w * (i + 1) + j],
+                    cam_coords[:, w * i + (j + 1)],
                 ]
-                if [0,0,0] in map(list, verts):
+                if [0, 0, 0] in map(list, verts):
                     continue
                 v1 = verts[0] - verts[1]
                 v2 = verts[0] - verts[2]
@@ -99,14 +112,14 @@ def depth_to_mesh(depth, camera=DEFAULT_CAMERA, minAngle=3.0):
                 u = center / np.linalg.norm(center)
                 angle = math.degrees(math.asin(abs(np.dot(n, u))))
                 if angle > minAngle:
-                    indices.append([w*i+j, w*(i+1)+j, w*i+(j+1)])
+                    indices.append([w * i + j, w * (i + 1) + j, w * i + (j + 1)])
 
                 verts = [
-                    cam_coords[:, w*i+(j+1)],
-                    cam_coords[:, w*(i+1)+j],
-                    cam_coords[:, w*(i+1)+(j+1)],
+                    cam_coords[:, w * i + (j + 1)],
+                    cam_coords[:, w * (i + 1) + j],
+                    cam_coords[:, w * (i + 1) + (j + 1)],
                 ]
-                if [0,0,0] in map(list, verts):
+                if [0, 0, 0] in map(list, verts):
                     continue
                 v1 = verts[0] - verts[1]
                 v2 = verts[0] - verts[2]
@@ -116,13 +129,15 @@ def depth_to_mesh(depth, camera=DEFAULT_CAMERA, minAngle=3.0):
                 u = center / np.linalg.norm(center)
                 angle = math.degrees(math.asin(abs(np.dot(n, u))))
                 if angle > minAngle:
-                    indices.append([w*i+(j+1),w*(i+1)+j, w*(i+1)+(j+1)])
+                    indices.append([w * i + (j + 1), w * (i + 1) + j, w * (i + 1) + (j + 1)])
                 pbar.update(1)
-    
+
+    import jhutil; jhutil.color_log(1111, )
     points = o3d.utility.Vector3dVector(cam_coords.transpose())
 
     mesh = o3d.geometry.TriangleMesh(points, indices)
-    mesh.compute_vertex_normals()
-    mesh.compute_triangle_normals()
-    
+    # mesh.compute_vertex_normals()
+    # mesh.compute_triangle_normals()
+    import jhutil; jhutil.color_log(2222, )
+
     return mesh
