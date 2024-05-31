@@ -49,7 +49,7 @@ def depth_file_to_mesh(image, cameraMatrix=DEFAULT_CAMERA, minAngle=3.0, sun3d=F
         depth_raw = np.load(image)
         if depth_raw.max() < 10:
             depth_raw *= 1000
-        depth_raw = depth_raw.astype('uint16')
+        # depth_raw = depth_raw.astype('uint16')
 
     width = depth_raw.shape[1]
     height = depth_raw.shape[0]
@@ -132,7 +132,6 @@ def depth_to_mesh(depth, camera=DEFAULT_CAMERA, minAngle=3.0):
                     indices.append([w * i + (j + 1), w * (i + 1) + j, w * (i + 1) + (j + 1)])
                 pbar.update(1)
 
-    import jhutil; jhutil.color_log(1111, )
     points = o3d.utility.Vector3dVector(cam_coords.transpose())
 
     mesh = o3d.geometry.TriangleMesh(points, indices)
